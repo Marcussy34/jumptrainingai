@@ -40,15 +40,15 @@ Build a self‑updating chatbot that:
 ---
 
 ## 5️⃣ System Overview
+
 ```mermaid
 graph TD
-  A[Cloudflare Worker<br/>Playlist Poller] -->|yt-dlp + captions| B(R2 "raw/")
-  B -->|daily CRON| C(GCP Cloud Run Job<br/>Chunk + Embed)
-  C -->|OpenAI text-embedding-3-small| D[Pinecone<br/>Serverless Starter]
-  D -->|top-k| E[LlamaIndex Cloud<br/>RAG Endpoint]
+  A[Cloudflare Worker: Playlist Poller] -->|yt-dlp + captions| B[R2: raw storage]
+  B -->|daily CRON| C[GCP Cloud Run Job: Chunk + Embed]
+  C -->|OpenAI text-embedding-3-small| D[Pinecone: Serverless Starter]
+  D -->|top-k search| E[LlamaIndex Cloud: RAG Endpoint]
   E -->|GPT-4o mini| F[Vercel Next.js Chat UI]
 ```
-
 ---
 
 ## 6️⃣ Component Requirements
