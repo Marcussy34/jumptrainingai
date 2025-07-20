@@ -5,12 +5,12 @@
 ---
 
 ## 1️⃣ Goal
-Build a self‑updating chatbot that:
-1. Continuously ingests new THP YouTube videos and shorts.
+Build a manually-triggered chatbot that:
+1. Ingests new THP YouTube videos and shorts on-demand via button click.
 2. Transcribes or re‑uses auto‑generated captions.
 3. Embeds, stores, and indexes the text for semantic search.
 4. Answers user questions using **OpenAI GPT‑4o mini** with retrieval‑augmented generation (RAG).
-5. Runs 100  % in the cloud and costs **< USD 10 per 100 h of new video**.
+5. Runs 100 % in the cloud and costs **< USD 10 per 100 h of new video**.
 
 ---
 
