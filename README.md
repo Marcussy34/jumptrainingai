@@ -57,9 +57,9 @@ graph TD
 | # | Component | Functional Requirements | Key Tech / Limits |
 | --- | -------- | ----------------------- | ----------------- |
 | C1 | **Ingestion Worker** | • Triggered manually via button click<br/>• Save `.vtt` captions when present<br/>• If no captions → send audio URL to STT queue | Cloudflare Worker (free ≤ 100 k req/day) |
-| C2 | **Storage** | • Store raw captions & transcripts ≤ 10 GB | Cloudflare R2 free tier (10 GB / 1 M Class‑A ops) |
-| C3 | **STT** | • Transcribe audio (< 30 % of videos)<br/>• Return JSON with timestamps | AssemblyAI v3 ($50 free credits, then ≈ $0.12/h) |
-| C4 | **Embedding Job** | • Chunk 400 tokens + 60 token overlap<br/>• Embed with OpenAI `text-embedding-3-small` (384 d) at $0.000 02 / k tokens | Google Cloud Run Job (scales to 0) |
+| C2 | **Storage** | • Store raw captions & transcripts ≤ 10 GB<br/>• Track processed videos in `processed_videos.json`<br/>• Support timestamp-based incremental processing | Cloudflare R2 free tier (10 GB / 1 M Class‑A ops) |
+| C3 | **STT** | • Transcribe audio (< 30 % of videos)<br/>• Return JSON with timestamps | AssemblyAI v3 ($50 free credits, then ≈ $0.12/h) |
+| C4 | **Embedding Job** | • Chunk 400 tokens + 60 token overlap<br/>• Embed with OpenAI `text-embedding-3-small` (384 d) at $0.000 02 / k tokens<br/>• Skip already-processed videos using metadata checks | Google Cloud Run Job (scales to 0) |
 | C5 | **Vector DB** | • Upsert & filter by `video_id`, `speaker`, `type`<br/>• 1 M read / 2 M write units free | Pinecone Serverless Starter |
 | C6 | **RAG Service** | • Query top‑k (k = 4) & re‑rank inside GPT prompt<br/>• Stream responses | LlamaIndex Cloud free tier (10 k credits/mo) |
 | C7 | **LLM** | • Use `gpt-4o-mini` (USD 0.15 / M input, 0.60 / M output) | OpenAI Chat Completions |
@@ -83,13 +83,18 @@ graph TD
 ## 8️⃣ Operational Flows
 1. **Manual button click** in UI triggers *Ingestion Worker*.
 2. Worker calls **YouTube Data API** → new video IDs.
-3. For each ID  
-   3.1 `yt-dlp --write-auto-sub` → captions exist → store to R2.  
-   3.2 *If no captions* → enqueue audio for STT (AssemblyAI).  
-4. **Manual trigger** (button or API call) starts Cloud Run Job to load new `.vtt` files from R2, chunks & embeds them, then upserts to Pinecone.
-5. **LlamaIndex Cloud** exposes `/chat` endpoint:  
+3. **Duplicate check**: Query R2 for existing `processed_videos.json` to skip already-ingested videos.
+4. For each **new** video ID:  
+   4.1 `yt-dlp --write-auto-sub` → captions exist → store to R2.  
+   4.2 *If no captions* → enqueue audio for STT (AssemblyAI).  
+   4.3 Update `processed_videos.json` with video ID + timestamp.
+5. **Manual trigger** (button or API call) starts Cloud Run Job:
+   5.1 Load **only new** `.vtt` files from R2 (compare timestamps).
+   5.2 Chunk & embed new content, then upsert to Pinecone.
+   5.3 Use video_id as metadata to prevent duplicate embeddings.
+6. **LlamaIndex Cloud** exposes `/chat` endpoint:  
    *Retriever → similarity_top_k = 4 → GPT‑4o mini prompt*  
-6. **Vercel UI** streams completions to the browser.
+7. **Vercel UI** streams completions to the browser.
 
 ---
 
