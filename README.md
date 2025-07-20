@@ -10,17 +10,17 @@ Build a self‑updating chatbot that:
 2. Transcribes or re‑uses auto‑generated captions.
 3. Embeds, stores, and indexes the text for semantic search.
 4. Answers user questions using **OpenAI GPT‑4o mini** with retrieval‑augmented generation (RAG).
-5. Runs 100 % in the cloud and costs **< USD 10 per 100 h of new video**.
+5. Runs 100  % in the cloud and costs **< USD 10 per 100 h of new video**.
 
 ---
 
 ## 2️⃣ Success Metrics
 | Metric | Target |
 | ------ | ------ |
-| 💸 **Monthly infra cost** | ≤ USD 10 for 100 h of new video |
-| ⏱️ **End‑to‑end latency** | ≤ 2 s P95 on one‑sentence questions |
-| 📈 **Answer correctness** (manual eval) | ≥ 80 % “acceptable” |
-| 🆕 **New video availability** | ≤ 6 h from YouTube publish to chatbot |
+| 💸 **Monthly infra cost** | ≤ USD 10 for 100 h of new video |
+| ⏱️ **End‑to‑end latency** | ≤ 2 s P95 on one‑sentence questions |
+| 📈 **Answer correctness** (manual eval) | ≥ 80 % "acceptable" |
+| 🆕 **New video availability** | Available within minutes after manual ingestion trigger |
 
 ---
 
@@ -43,11 +43,12 @@ Build a self‑updating chatbot that:
 
 ```mermaid
 graph TD
-  A[Cloudflare Worker: Playlist Poller] -->|yt-dlp + captions| B[R2: raw storage]
-  B -->|daily CRON| C[GCP Cloud Run Job: Chunk + Embed]
-  C -->|OpenAI text-embedding-3-small| D[Pinecone: Serverless Starter]
-  D -->|top-k search| E[LlamaIndex Cloud: RAG Endpoint]
-  E -->|GPT-4o mini| F[Vercel Next.js Chat UI]
+  A[Manual Trigger Button] -->|user click| B[Cloudflare Worker: Video Ingestion]
+  B -->|yt-dlp + captions| C[R2: raw storage]
+  C -->|manual trigger| D[GCP Cloud Run Job: Chunk + Embed]
+  D -->|OpenAI text-embedding-3-small| E[Pinecone: Serverless Starter]
+  E -->|top-k search| F[LlamaIndex Cloud: RAG Endpoint]
+  F -->|GPT-4o mini| G[Vercel Next.js Chat UI]
 ```
 ---
 
@@ -55,14 +56,14 @@ graph TD
 
 | # | Component | Functional Requirements | Key Tech / Limits |
 | --- | -------- | ----------------------- | ----------------- |
-| C1 | **Ingestion Worker** | • Poll playlist hourly<br/>• Save `.vtt` captions when present<br/>• If no captions → send audio URL to STT queue | Cloudflare Worker (free ≤ 100 k req/day) |
+| C1 | **Ingestion Worker** | • Triggered manually via button click<br/>• Save `.vtt` captions when present<br/>• If no captions → send audio URL to STT queue | Cloudflare Worker (free ≤ 100 k req/day) |
 | C2 | **Storage** | • Store raw captions & transcripts ≤ 10 GB | Cloudflare R2 free tier (10 GB / 1 M Class‑A ops) |
 | C3 | **STT** | • Transcribe audio (< 30 % of videos)<br/>• Return JSON with timestamps | AssemblyAI v3 ($50 free credits, then ≈ $0.12/h) |
 | C4 | **Embedding Job** | • Chunk 400 tokens + 60 token overlap<br/>• Embed with OpenAI `text-embedding-3-small` (384 d) at $0.000 02 / k tokens | Google Cloud Run Job (scales to 0) |
 | C5 | **Vector DB** | • Upsert & filter by `video_id`, `speaker`, `type`<br/>• 1 M read / 2 M write units free | Pinecone Serverless Starter |
-| C6 | **RAG Service** | • Query top‑k (k = 4) & re‑rank inside GPT prompt<br/>• Stream responses | LlamaIndex Cloud free tier (10 k credits/mo) |
-| C7 | **LLM** | • Use `gpt-4o-mini` (USD 0.15 / M input, 0.60 / M output) | OpenAI Chat Completions |
-| C8 | **Front‑end** | • Chat with streaming SSE<br/>• “Open source” button → YouTube link + timestamp | Next.js on Vercel Hobby (free) |
+| C6 | **RAG Service** | • Query top‑k (k = 4) & re‑rank inside GPT prompt<br/>• Stream responses | LlamaIndex Cloud free tier (10 k credits/mo) |
+| C7 | **LLM** | • Use `gpt-4o-mini` (USD 0.15 / M input, 0.60 / M output) | OpenAI Chat Completions |
+| C8 | **Front‑end** | • Chat with streaming SSE<br/>• "Open source" button → YouTube link + timestamp<br/>• Manual trigger buttons for video ingestion & embedding | Next.js on Vercel Hobby (free) |
 
 ---
 
@@ -80,14 +81,14 @@ graph TD
 ---
 
 ## 8️⃣ Operational Flows
-1. **Scheduler (cron)** invokes *Ingestion Worker*.
+1. **Manual button click** in UI triggers *Ingestion Worker*.
 2. Worker calls **YouTube Data API** → new video IDs.
 3. For each ID  
    3.1 `yt-dlp --write-auto-sub` → captions exist → store to R2.  
    3.2 *If no captions* → enqueue audio for STT (AssemblyAI).  
-4. **Cloud Run Job** (daily) loads new `.vtt` files from R2, chunks & embeds them, then upserts to Pinecone.
+4. **Manual trigger** (button or API call) starts Cloud Run Job to load new `.vtt` files from R2, chunks & embeds them, then upserts to Pinecone.
 5. **LlamaIndex Cloud** exposes `/chat` endpoint:  
-   *Retriever → similarity_top_k = 4 → GPT‑4o mini prompt*  
+   *Retriever → similarity_top_k = 4 → GPT‑4o mini prompt*  
 6. **Vercel UI** streams completions to the browser.
 
 ---
@@ -123,7 +124,7 @@ vercel --prod
 
 ---
 
-## 11️⃣ Risks & Mitigations
+## 1️⃣1️⃣ Risks & Mitigations
 
 | Risk | Likelihood | Mitigation |
 | ---- | ---------- | ---------- |
@@ -133,7 +134,7 @@ vercel --prod
 
 ---
 
-## 12️⃣ Future Extensions
+## 1️⃣2️⃣ Future Extensions
 * Pose‑estimation form check.
 * Auto‑clip drill library with video snippets.
 * Fine‑tune GPT‑4o mini on curated Q&A pairs (OpenAI free 2 M training tokens/day).
