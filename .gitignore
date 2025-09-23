@@ -1,0 +1,151 @@
+# JumpTrainingAI - Git Ignore File
+
+# Environment Variables (NEVER commit API keys!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Node.js Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime and Build Files
+dist/
+build/
+.next/
+.nuxt/
+.output/
+.vercel/
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs
+*.log
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Cloud Function Build Files
+.wrangler/
+.dev.vars
+
+# Google Cloud
+.gcloudignore
+gcp-key.json
+service-account-key.json
+
+# Python (for any Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Database Files
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup Files
+*.bak
+*.backup
+
+# Test Coverage
+coverage/
+.nyc_output/
+.coverage
+
+# Dependency Directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file (backup)
+.env.backup
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# Local development files
+.local
+local/
+
+# Cloudflare specific
+wrangler.toml.backup
+
+# AI/ML model files (can be large)
+*.model
+*.pkl
+*.joblib
+
+# Video files (for testing - don't commit large files)
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Audio files (for testing)
+*.mp3
+*.wav
+*.flac
+
+# Large data files
+*.csv
+*.json.gz
+*.tar.gz
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Local test files
+test-*.local.*
+*-test.local.*

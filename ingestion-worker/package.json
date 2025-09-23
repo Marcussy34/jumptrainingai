@@ -1,0 +1,17 @@
+{
+  "name": "jumptrainingai-ingestion-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker for video ingestion and processing",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test-cloudflare.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {},
+  "author": "",
+  "license": "MIT"
+}
