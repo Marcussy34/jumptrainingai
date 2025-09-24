@@ -135,6 +135,16 @@ async function handleRoot(request, env) {
             <h2>Phase 1: Basic Storage & Ingestion</h2>
             <p>This worker handles YouTube video metadata extraction and storage in R2.</p>
             
+            <h3>Channel Input</h3>
+            <div style="margin: 15px 0;">
+                <input type="text" id="channelInput" 
+                       placeholder="Enter channel: @TheHoopsProf, channel ID, or search term"
+                       style="width: 400px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <input type="number" id="maxResults" value="5" min="1" max="50" 
+                       style="width: 80px; padding: 8px; margin-left: 10px;">
+                <label for="maxResults" style="margin-left: 5px;">videos</label>
+            </div>
+            
             <h3>Manual Triggers</h3>
             <button class="button" onclick="triggerIngestion()">
                 🎬 Trigger Video Ingestion
@@ -145,6 +155,19 @@ async function handleRoot(request, env) {
             <button class="button" onclick="testHealth()">
                 ❤️ Health Check
             </button>
+            <button class="button" onclick="testKnownChannel()">
+                🧪 Test with @YouTube
+            </button>
+        </div>
+        
+        <div class="container">
+            <h3>💡 Channel Format Examples</h3>
+            <ul>
+                <li><strong>Handle:</strong> @TheHoopsProf, @YouTube, @GoogleDevelopers</li>
+                <li><strong>Channel ID:</strong> UCxxxxxxxxxxxxxxxxxxxxxx (24 characters starting with UC)</li>
+                <li><strong>Search:</strong> TheHoopsProf, "Isaiah Rivera basketball", etc.</li>
+            </ul>
+            <p><em>The system will try multiple lookup methods automatically.</em></p>
         </div>
 
         <div id="status-container"></div>
@@ -168,15 +191,18 @@ async function handleRoot(request, env) {
                 button.disabled = true;
                 button.textContent = '⏳ Processing...';
                 
-                showStatus('Starting video ingestion process...', 'loading');
+                const channelInput = document.getElementById('channelInput').value.trim() || '@TheHoopsProf';
+                const maxResults = parseInt(document.getElementById('maxResults').value) || 5;
+                
+                showStatus(\`Starting video ingestion for: \${channelInput}\`, 'loading');
                 
                 try {
                     const response = await fetch('/ingest', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
-                            channelHandle: '@TheHoopsProf',
-                            maxResults: 10 
+                            channelHandle: channelInput,
+                            maxResults: maxResults 
                         })
                     });
                     
@@ -225,8 +251,15 @@ async function handleRoot(request, env) {
                 }
             }
 
+            async function testKnownChannel() {
+                document.getElementById('channelInput').value = '@YouTube';
+                document.getElementById('maxResults').value = '3';
+                showStatus('🧪 Testing with known working channel @YouTube...', 'info');
+                setTimeout(triggerIngestion, 500); // Small delay to show the message
+            }
+
             // Show initial status
-            showStatus('Worker ready - click a button to test functionality', 'info');
+            showStatus('Worker ready - enter a channel and click a button to test', 'info');
         </script>
     </body>
     </html>
@@ -439,8 +472,9 @@ async function handleStatus(request, env) {
 
 /**
  * Fetch channel videos from YouTube Data API
+ * Supports multiple channel identifier formats: @handle, channelId, or search
  */
-async function fetchChannelVideos(env, channelHandle, maxResults = 10) {
+async function fetchChannelVideos(env, channelIdentifier, maxResults = 10) {
   const apiKey = env.YOUTUBE_API_KEY;
   
   if (!apiKey) {
@@ -448,23 +482,9 @@ async function fetchChannelVideos(env, channelHandle, maxResults = 10) {
   }
 
   try {
-    // First, get the channel ID from the handle
-    const channelResponse = await fetch(
-      `https://www.googleapis.com/youtube/v3/channels?part=id&forHandle=${encodeURIComponent(channelHandle)}&key=${apiKey}`
-    );
-
-    if (!channelResponse.ok) {
-      throw new Error(`YouTube API error: ${channelResponse.status} ${channelResponse.statusText}`);
-    }
-
-    const channelData = await channelResponse.json();
-    
-    if (!channelData.items || channelData.items.length === 0) {
-      throw new Error(`Channel not found: ${channelHandle}`);
-    }
-
-    const channelId = channelData.items[0].id;
-    console.log(`Found channel ID: ${channelId} for handle: ${channelHandle}`);
+    // Try to resolve channel ID using different methods
+    const channelId = await resolveChannelId(apiKey, channelIdentifier);
+    console.log(`Found channel ID: ${channelId} for identifier: ${channelIdentifier}`);
 
     // Now get the channel's videos
     const videosResponse = await fetch(
@@ -514,6 +534,97 @@ async function fetchChannelVideos(env, channelHandle, maxResults = 10) {
     console.error('YouTube API error:', error);
     throw new Error(`Failed to fetch videos: ${error.message}`);
   }
+}
+
+/**
+ * Resolve channel identifier to YouTube channel ID
+ * Tries multiple approaches: handle lookup, direct ID, search
+ */
+async function resolveChannelId(apiKey, identifier) {
+  console.log(`Resolving channel identifier: ${identifier}`);
+  
+  // Method 1: Try as handle (if starts with @)
+  if (identifier.startsWith('@')) {
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/channels?part=id,snippet&forHandle=${encodeURIComponent(identifier)}&key=${apiKey}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.items && data.items.length > 0) {
+          console.log(`✅ Found via handle: ${data.items[0].snippet.title}`);
+          return data.items[0].id;
+        }
+      }
+    } catch (error) {
+      console.log(`Handle lookup failed: ${error.message}`);
+    }
+  }
+  
+  // Method 2: Try as direct channel ID (if looks like UC...)
+  if (identifier.startsWith('UC') && identifier.length === 24) {
+    try {
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/channels?part=id,snippet&id=${identifier}&key=${apiKey}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.items && data.items.length > 0) {
+          console.log(`✅ Found via channel ID: ${data.items[0].snippet.title}`);
+          return data.items[0].id;
+        }
+      }
+    } catch (error) {
+      console.log(`Channel ID lookup failed: ${error.message}`);
+    }
+  }
+  
+  // Method 3: Try as legacy username (without @)
+  const usernameToTry = identifier.startsWith('@') ? identifier.substring(1) : identifier;
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/channels?part=id,snippet&forUsername=${encodeURIComponent(usernameToTry)}&key=${apiKey}`
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.items && data.items.length > 0) {
+        console.log(`✅ Found via username: ${data.items[0].snippet.title}`);
+        return data.items[0].id;
+      }
+    }
+  } catch (error) {
+    console.log(`Username lookup failed: ${error.message}`);
+  }
+  
+  // Method 4: Search for the channel name
+  try {
+    console.log(`🔍 Searching for channel: ${identifier}`);
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(identifier)}&type=channel&maxResults=5&key=${apiKey}`
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.items && data.items.length > 0) {
+        // Return the first match
+        const firstMatch = data.items[0];
+        console.log(`✅ Found via search: ${firstMatch.snippet.title}`);
+        console.log(`   Available channels found:`);
+        data.items.forEach((item, i) => {
+          console.log(`   ${i + 1}. ${item.snippet.title} (${item.snippet.channelId})`);
+        });
+        return firstMatch.snippet.channelId;
+      }
+    }
+  } catch (error) {
+    console.log(`Search lookup failed: ${error.message}`);
+  }
+  
+  // If all methods fail, provide helpful error message
+  throw new Error(`Channel not found: ${identifier}. Tried handle lookup, direct ID, username, and search. Please check the channel exists and is public.`);
 }
 
 /**

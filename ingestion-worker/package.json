@@ -7,6 +7,7 @@
     "test": "node test-cloudflare.js",
     "test:worker": "node test-worker.js",
     "sync-secrets": "node sync-secrets.js",
+    "debug:youtube": "node debug-youtube.js",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "deploy:dev": "wrangler deploy --env development",
