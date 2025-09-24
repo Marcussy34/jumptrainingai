@@ -135,12 +135,18 @@ async function handleRoot(request, env) {
             <h2>Phase 1: Basic Storage & Ingestion</h2>
             <p>This worker handles YouTube video metadata extraction and storage in R2.</p>
             
-            <h3>Channel Input</h3>
+            <h3>Source Input</h3>
             <div style="margin: 15px 0;">
-                <input type="text" id="channelInput" 
-                       placeholder="Enter channel: @TheHoopsProf, channel ID, or search term"
-                       style="width: 400px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
-                <input type="number" id="maxResults" value="5" min="1" max="50" 
+                <div style="margin-bottom: 10px;">
+                    <input type="radio" id="sourceChannel" name="sourceType" value="channel" checked>
+                    <label for="sourceChannel">Channel</label>
+                    <input type="radio" id="sourcePlaylist" name="sourceType" value="playlist" style="margin-left: 20px;">
+                    <label for="sourcePlaylist">Playlist</label>
+                </div>
+                <input type="text" id="sourceInput" 
+                       placeholder="Enter channel (@TheHoopsProf) or playlist URL (https://youtube.com/playlist?list=...)"
+                       style="width: 500px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <input type="number" id="maxResults" value="10" min="1" max="50" 
                        style="width: 80px; padding: 8px; margin-left: 10px;">
                 <label for="maxResults" style="margin-left: 5px;">videos</label>
             </div>
@@ -158,16 +164,25 @@ async function handleRoot(request, env) {
             <button class="button" onclick="testKnownChannel()">
                 🧪 Test with @YouTube
             </button>
+            <button class="button" onclick="testUserPlaylist()">
+                🎯 Test Your Playlist
+            </button>
         </div>
         
         <div class="container">
-            <h3>💡 Channel Format Examples</h3>
+            <h3>💡 Format Examples</h3>
+            <h4>📺 Channel Options:</h4>
             <ul>
-                <li><strong>Handle:</strong> @TheHoopsProf, @YouTube, @GoogleDevelopers</li>
+                <li><strong>Handle:</strong> @YouTube, @GoogleDevelopers</li>
                 <li><strong>Channel ID:</strong> UCxxxxxxxxxxxxxxxxxxxxxx (24 characters starting with UC)</li>
-                <li><strong>Search:</strong> TheHoopsProf, "Isaiah Rivera basketball", etc.</li>
+                <li><strong>Search:</strong> "Isaiah Rivera basketball", etc.</li>
             </ul>
-            <p><em>The system will try multiple lookup methods automatically.</em></p>
+            <h4>📋 Playlist Options:</h4>
+            <ul>
+                <li><strong>Full URL:</strong> https://youtube.com/playlist?list=PLxxxxxxx</li>
+                <li><strong>Playlist ID:</strong> PLxxxxxxx (starts with PL)</li>
+            </ul>
+            <p><em>The system will automatically detect and process the format.</em></p>
         </div>
 
         <div id="status-container"></div>
@@ -191,19 +206,25 @@ async function handleRoot(request, env) {
                 button.disabled = true;
                 button.textContent = '⏳ Processing...';
                 
-                const channelInput = document.getElementById('channelInput').value.trim() || '@TheHoopsProf';
-                const maxResults = parseInt(document.getElementById('maxResults').value) || 5;
+                const sourceInput = document.getElementById('sourceInput').value.trim() || 'Isaiah Rivera';
+                const sourceType = document.querySelector('input[name="sourceType"]:checked').value;
+                const maxResults = parseInt(document.getElementById('maxResults').value) || 10;
                 
-                showStatus(\`Starting video ingestion for: \${channelInput}\`, 'loading');
+                showStatus(\`Starting \${sourceType} ingestion for: \${sourceInput}\`, 'loading');
                 
                 try {
+                    const requestBody = { maxResults: maxResults };
+                    
+                    if (sourceType === 'playlist') {
+                        requestBody.playlistUrl = sourceInput;
+                    } else {
+                        requestBody.channelHandle = sourceInput;
+                    }
+                    
                     const response = await fetch('/ingest', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ 
-                            channelHandle: channelInput,
-                            maxResults: maxResults 
-                        })
+                        body: JSON.stringify(requestBody)
                     });
                     
                     const result = await response.json();
@@ -252,10 +273,19 @@ async function handleRoot(request, env) {
             }
 
             async function testKnownChannel() {
-                document.getElementById('channelInput').value = '@YouTube';
+                document.getElementById('sourceChannel').checked = true;
+                document.getElementById('sourceInput').value = '@YouTube';
                 document.getElementById('maxResults').value = '3';
                 showStatus('🧪 Testing with known working channel @YouTube...', 'info');
                 setTimeout(triggerIngestion, 500); // Small delay to show the message
+            }
+            
+            function testUserPlaylist() {
+                document.getElementById('sourcePlaylist').checked = true;
+                document.getElementById('sourceInput').value = 'https://youtube.com/playlist?list=PLkuJUNfqNFGKj3DkG5xpmXsn9U5Nfthr9';
+                document.getElementById('maxResults').value = '10';
+                showStatus('🎯 Testing with your jump training playlist...', 'info');
+                setTimeout(triggerIngestion, 500);
             }
 
             // Show initial status
@@ -348,16 +378,25 @@ async function handleIngest(request, env, ctx) {
 
   try {
     const body = await request.json();
-    const channelHandle = body.channelHandle || '@TheHoopsProf';
     const maxResults = body.maxResults || 10;
+    
+    let newVideos;
+    let sourceDescription;
 
-    console.log(`Starting ingestion for channel: ${channelHandle}`);
+    // Determine if we're processing a playlist or channel
+    if (body.playlistUrl) {
+      sourceDescription = `playlist: ${body.playlistUrl}`;
+      console.log(`Starting ingestion for ${sourceDescription}`);
+      newVideos = await fetchPlaylistVideos(env, body.playlistUrl, maxResults);
+    } else {
+      const channelHandle = body.channelHandle || 'Isaiah Rivera';
+      sourceDescription = `channel: ${channelHandle}`;
+      console.log(`Starting ingestion for ${sourceDescription}`);
+      newVideos = await fetchChannelVideos(env, channelHandle, maxResults);
+    }
 
     // Step 1: Get processed videos list to check for duplicates
     const processedVideos = await getProcessedVideos(env);
-    
-    // Step 2: Fetch channel videos from YouTube API
-    const newVideos = await fetchChannelVideos(env, channelHandle, maxResults);
     
     // Step 3: Filter out already processed videos
     const unprocessedVideos = newVideos.filter(video => 
@@ -370,6 +409,7 @@ async function handleIngest(request, env, ctx) {
       return new Response(JSON.stringify({
         success: true,
         message: 'No new videos to process',
+        source: sourceDescription,
         totalFound: newVideos.length,
         alreadyProcessed: newVideos.length
       }), {
@@ -405,6 +445,7 @@ async function handleIngest(request, env, ctx) {
     return new Response(JSON.stringify({
       success: true,
       message: 'Ingestion completed',
+      source: sourceDescription,
       processed: successfulVideos.length,
       failed: failedVideos.length,
       totalInDatabase: processedVideos.totalVideos,
@@ -534,6 +575,111 @@ async function fetchChannelVideos(env, channelIdentifier, maxResults = 10) {
     console.error('YouTube API error:', error);
     throw new Error(`Failed to fetch videos: ${error.message}`);
   }
+}
+
+/**
+ * Fetch videos from a YouTube playlist
+ * Supports playlist URLs or direct playlist IDs
+ */
+async function fetchPlaylistVideos(env, playlistInput, maxResults = 10) {
+  const apiKey = env.YOUTUBE_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error('YOUTUBE_API_KEY is not configured');
+  }
+
+  try {
+    // Extract playlist ID from URL or use directly if it's already an ID
+    const playlistId = extractPlaylistId(playlistInput);
+    console.log(`Processing playlist ID: ${playlistId}`);
+
+    // Get playlist items from YouTube API
+    const response = await fetch(
+      `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${playlistId}&maxResults=${maxResults}&key=${apiKey}`
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`YouTube API error: ${response.status} - ${errorData.error?.message || response.statusText}`);
+    }
+
+    const playlistData = await response.json();
+
+    if (!playlistData.items || playlistData.items.length === 0) {
+      throw new Error(`No videos found in playlist: ${playlistId}`);
+    }
+
+    console.log(`Found ${playlistData.items.length} videos in playlist`);
+
+    // Get video IDs for detailed metadata
+    const videoIds = playlistData.items.map(item => item.snippet.resourceId.videoId).join(',');
+    
+    // Fetch detailed video information
+    const detailsResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=${videoIds}&key=${apiKey}`
+    );
+
+    if (!detailsResponse.ok) {
+      throw new Error(`YouTube API error fetching video details: ${detailsResponse.status} ${detailsResponse.statusText}`);
+    }
+
+    const detailsData = await detailsResponse.json();
+
+    // Transform to our video metadata format
+    return detailsData.items.map(video => ({
+      videoId: video.id,
+      title: video.snippet.title,
+      description: video.snippet.description,
+      publishedAt: video.snippet.publishedAt,
+      duration: video.contentDetails.duration,
+      viewCount: parseInt(video.statistics.viewCount || 0),
+      likeCount: parseInt(video.statistics.likeCount || 0),
+      channelId: video.snippet.channelId,
+      channelTitle: video.snippet.channelTitle,
+      thumbnails: video.snippet.thumbnails,
+      tags: video.snippet.tags || [],
+      categoryId: video.snippet.categoryId,
+      defaultLanguage: video.snippet.defaultLanguage || 'en',
+      captionsAvailable: false, // Will be determined later in Phase 2
+      processedAt: new Date().toISOString(),
+      status: 'pending',
+      sourceType: 'playlist',
+      sourceId: playlistId
+    }));
+
+  } catch (error) {
+    console.error('YouTube Playlist API error:', error);
+    throw new Error(`Failed to fetch playlist videos: ${error.message}`);
+  }
+}
+
+/**
+ * Extract playlist ID from various YouTube playlist URL formats
+ */
+function extractPlaylistId(input) {
+  // Remove any whitespace
+  const cleanInput = input.trim();
+  
+  // If it already looks like a playlist ID (starts with PL)
+  if (cleanInput.startsWith('PL') && cleanInput.length > 10) {
+    return cleanInput;
+  }
+  
+  // Extract from various YouTube URL formats
+  const patterns = [
+    /[?&]list=([^&]+)/,           // ?list=PLxxx or &list=PLxxx
+    /youtube\.com\/playlist\?list=([^&]+)/, // youtube.com/playlist?list=PLxxx
+    /youtu\.be\/.*[?&]list=([^&]+)/        // youtu.be/xxx?list=PLxxx
+  ];
+  
+  for (const pattern of patterns) {
+    const match = cleanInput.match(pattern);
+    if (match && match[1]) {
+      return match[1].split('&')[0]; // Remove any additional parameters
+    }
+  }
+  
+  throw new Error(`Invalid playlist format: ${input}. Expected playlist URL or ID starting with 'PL'`);
 }
 
 /**
